@@ -17,7 +17,7 @@ class Page:
 load_dotenv()
 location = "us-east4"
 
-@streamlit.dialog("Allow access", dismissible=False)
+@streamlit.dialog("Allow access to notebook", dismissible=False)
 def load_notebook(): 
     app = PublicClientApplication(
         os.environ["ENTRA_APP_ID"],
@@ -41,19 +41,24 @@ def load_notebook():
         print(result.get("error_description"))
         print(result.get("correlation_id"))
         exit(1)
+    
+    headers = {'Authorization': 'Bearer ' + result["access_token"]}
 
     streamlit.write("Authenticated! Now fetching pages...")
 
     notebook = list()
 
+    count_url = f"https://graph.microsoft.com/v1.0/me/onenote/pages?$filter=(parentNotebook/id eq '{os.environ['NOTEBOOK_ID']}')&$count=true&$top=1&$select=id"
+    count = requests.get(count_url, headers=headers).json()["@odata.count"]
+    page_count = 0
+
+    progress = streamlit.progress(0, f"Read 0/{count}")
+
     # Read all page IDs + names (section name - page name)
     # https://stackoverflow.com/questions/28326800/odata-combining-expand-and-select
     url = f"https://graph.microsoft.com/v1.0/me/onenote/pages?$expand=parentNotebook($select=id; $filter=id eq '{os.environ['NOTEBOOK_ID']}'),parentSection($select=displayName)&$select=id,title,links,parentNotebook,parentSection"
     while True:
-        graph_data = requests.get(
-            url,
-            headers={'Authorization': 'Bearer ' + result["access_token"]}
-        ).json()
+        graph_data = requests.get(url, headers=headers).json()
         if "value" not in graph_data:
             print("Empty response")
             print(url)
@@ -66,18 +71,21 @@ def load_notebook():
 
             notebook.append(Page(name, page["id"], page["links"]["oneNoteWebUrl"]["href"]))
             print(f"Found page '{name}' ({page['id']}).")
+            page_count += 1
+            progress.progress(page_count, f"Read {page_count}/{count}")
         if "@odata.nextLink" in graph_data: # Pagination
             url = graph_data["@odata.nextLink"]
         else:
             break
     streamlit.write(f"Found {len(notebook)} pages.")
 
-    return notebook
+    streamlit.session_state.notebook = notebook
 
 if "notebook" not in streamlit.session_state:
     with streamlit.spinner("Accessing Notebook..."):
-        streamlit.session_state.notebook = load_notebook()
+        load_notebook()
         streamlit.rerun()
+        streamlit.toast(f"Read {len(streamlit.session_state.notebook)} pages")
 
 def convert_title_to_notebook_link(title):
     page = next((page for page in streamlit.session_state.notebook if page.name == title), None)
@@ -124,7 +132,7 @@ if "chat" not in streamlit.session_state:
     chat = client.chats.create(
         model="gemini-2.5-flash",
         config=types.GenerateContentConfig(
-            system_instruction="Keep responses brief unless told otherwise. Use at most 4 sentences.",
+            system_instruction="Keep responses brief. Use at most 4 sentences unless asked otherwise.",
             tools=[rag_retrieval_tool],
         )
     )
