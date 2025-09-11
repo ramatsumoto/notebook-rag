@@ -17,6 +17,8 @@ class Page:
 load_dotenv()
 location = "us-east4"
 
+streamlit.set_page_config("Notebook RAG")
+
 @streamlit.dialog("Allow access to notebook", dismissible=False)
 def load_notebook(): 
     app = PublicClientApplication(
@@ -72,7 +74,7 @@ def load_notebook():
             notebook.append(Page(name, page["id"], page["links"]["oneNoteWebUrl"]["href"]))
             print(f"Found page '{name}' ({page['id']}).")
             page_count += 1
-            progress.progress(page_count, f"Read {page_count}/{count}")
+            progress.progress(page_count/count, f"Read {page_count}/{count}")
         if "@odata.nextLink" in graph_data: # Pagination
             url = graph_data["@odata.nextLink"]
         else:
