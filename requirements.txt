@@ -50,6 +50,7 @@ pandas==2.3.2
 pillow==11.3.0
 pipx==1.7.1
 platformdirs==4.4.0
+pip==22.0.4
 proto-plus==1.26.1
 protobuf==6.32.0
 pyarrow==21.0.0
@@ -72,6 +73,7 @@ requests==2.32.5
 rpds-py==0.27.1
 rsa==4.9.1
 selenium==4.28.1
+setuptools==61.0.0
 shapely==2.1.1
 six==1.17.0
 smmap==5.0.2

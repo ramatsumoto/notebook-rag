@@ -38,7 +38,7 @@ def read_notebook_pages(get_html = True) -> list[Page]:
 
     # Read all page IDs + names (section name - page name)
     # https://stackoverflow.com/questions/28326800/odata-combining-expand-and-select
-    url = f"https://graph.microsoft.com/v1.0/me/onenote/pages?$expand=parentNotebook($select=id; $filter=id eq '{os.environ["NOTEBOOK_ID"]}'),parentSection($select=displayName)&$select=id,title,links,parentNotebook,parentSection"
+    url = f"https://graph.microsoft.com/v1.0/me/onenote/pages?$expand=parentNotebook($select=id; $filter=id eq '{os.environ['NOTEBOOK_ID']}'),parentSection($select=displayName)&$select=id,title,links,parentNotebook,parentSection"
     while True:
         graph_data = requests.get(
             url,
@@ -90,7 +90,7 @@ def create_corpus():
             rag_embedding_model_config=embedding_model_config
         ),
     )
-    print(f"Creating new corpus '{os.environ["CORPUS_NAME"]}'")
+    print(f"Creating new corpus '{os.environ['CORPUS_NAME']}'")
 
     os.makedirs(directory, exist_ok=True)
     for page in notebook:
