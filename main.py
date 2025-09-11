@@ -3,16 +3,81 @@ from google.genai import types
 from vertexai import rag
 import vertexai
 import streamlit
+from msal import PublicClientApplication
+import requests
 import os
 from dotenv import load_dotenv
-from documents import read_notebook_pages
+
+class Page:
+    def __init__(self, name, id, url):
+        self.name = name
+        self.id = id
+        self.url = url
 
 load_dotenv()
 location = "us-east4"
 
+@streamlit.dialog("Allow access", dismissible=False)
+def load_notebook(): 
+    app = PublicClientApplication(
+        os.environ["ENTRA_APP_ID"],
+        authority=f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}"
+    )
+    result = None
+
+    flow = app.initiate_device_flow(
+        scopes=["User.Read", "Notes.Read", "Notes.Read.All"]
+    )
+    if "user_code" not in flow:
+        print(flow)
+        streamlit.error(flow)
+
+    streamlit.write(flow["message"])
+
+    result = app.acquire_token_by_device_flow(flow)
+    
+    if "access_token" not in result:
+        print(result.get("error"))
+        print(result.get("error_description"))
+        print(result.get("correlation_id"))
+        exit(1)
+
+    streamlit.write("Authenticated! Now fetching pages...")
+
+    notebook = list()
+
+    # Read all page IDs + names (section name - page name)
+    # https://stackoverflow.com/questions/28326800/odata-combining-expand-and-select
+    url = f"https://graph.microsoft.com/v1.0/me/onenote/pages?$expand=parentNotebook($select=id; $filter=id eq '{os.environ['NOTEBOOK_ID']}'),parentSection($select=displayName)&$select=id,title,links,parentNotebook,parentSection"
+    while True:
+        graph_data = requests.get(
+            url,
+            headers={'Authorization': 'Bearer ' + result["access_token"]}
+        ).json()
+        if "value" not in graph_data:
+            print("Empty response")
+            print(url)
+            break
+        for page in graph_data["value"]:
+            # Skip pages not in Notebook
+            if page["parentNotebook"]["id"] != os.environ["NOTEBOOK_ID"]:
+                continue
+            name = f'{page["parentSection"]["displayName"]} - {page["title"]}'.replace("/", "-")
+
+            notebook.append(Page(name, page["id"], page["links"]["oneNoteWebUrl"]["href"]))
+            print(f"Found page '{name}' ({page['id']}).")
+        if "@odata.nextLink" in graph_data: # Pagination
+            url = graph_data["@odata.nextLink"]
+        else:
+            break
+    streamlit.write(f"Found {len(notebook)} pages.")
+
+    return notebook
+
 if "notebook" not in streamlit.session_state:
     with streamlit.spinner("Accessing Notebook..."):
-        streamlit.session_state.notebook = read_notebook_pages(False)
+        streamlit.session_state.notebook = load_notebook()
+        streamlit.rerun()
 
 def convert_title_to_notebook_link(title):
     page = next((page for page in streamlit.session_state.notebook if page.name == title), None)

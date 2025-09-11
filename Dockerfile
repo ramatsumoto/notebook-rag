@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY documents.py main.py requirements.txt /app/
+COPY main.py requirements.txt /app/
 
 RUN pip3 install -r requirements.txt
 
