@@ -93,7 +93,7 @@ def convert_title_to_notebook_link(title):
     page = next((page for page in streamlit.session_state.notebook if page.name == title), None)
     if page is None:
         for page in streamlit.session_state.notebook:
-            if title.removesuffix("xa0") in page.title:
+            if title.removesuffix("xa0") in page.name:
                 return f"[{page.name}]({page.url})"
         return ""
     return f"[{page.name}]({page.url})"
