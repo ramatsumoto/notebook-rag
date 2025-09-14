@@ -1,17 +1,16 @@
 from google import genai
 from google.genai import types
+from google.cloud import storage
 from vertexai import rag
 import vertexai
 import streamlit
-from msal import PublicClientApplication
-import requests
 import os
+import json
 from dotenv import load_dotenv
 
 class Page:
-    def __init__(self, name, id, url):
+    def __init__(self, name, url):
         self.name = name
-        self.id = id
         self.url = url
 
 load_dotenv()
@@ -19,83 +18,24 @@ location = "us-east4"
 
 streamlit.set_page_config("Notebook RAG")
 
-@streamlit.dialog("Allow access to notebook", dismissible=False)
-def load_notebook(): 
-    app = PublicClientApplication(
-        os.environ["ENTRA_APP_ID"],
-        authority=f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}"
-    )
-    result = None
-
-    flow = app.initiate_device_flow(
-        scopes=["User.Read", "Notes.Read", "Notes.Read.All"]
-    )
-    if "user_code" not in flow:
-        print(flow)
-        streamlit.error(flow)
-
-    streamlit.write(flow["message"])
-
-    result = app.acquire_token_by_device_flow(flow)
-    
-    if "access_token" not in result:
-        print(result.get("error"))
-        print(result.get("error_description"))
-        print(result.get("correlation_id"))
-        exit(1)
-    
-    headers = {'Authorization': 'Bearer ' + result["access_token"]}
-
-    streamlit.write("Authenticated! Now fetching pages...")
-
-    notebook = list()
-
-    count_url = f"https://graph.microsoft.com/v1.0/me/onenote/pages?$filter=(parentNotebook/id eq '{os.environ['NOTEBOOK_ID']}')&$count=true&$top=1&$select=id"
-    count = requests.get(count_url, headers=headers).json()["@odata.count"]
-    page_count = 0
-
-    progress = streamlit.progress(0, f"Read 0/{count}")
-
-    # Read all page IDs + names (section name - page name)
-    # https://stackoverflow.com/questions/28326800/odata-combining-expand-and-select
-    url = f"https://graph.microsoft.com/v1.0/me/onenote/pages?$expand=parentNotebook($select=id; $filter=id eq '{os.environ['NOTEBOOK_ID']}'),parentSection($select=displayName)&$select=id,title,links,parentNotebook,parentSection"
-    while True:
-        graph_data = requests.get(url, headers=headers).json()
-        if "value" not in graph_data:
-            print("Empty response")
-            print(url)
-            break
-        for page in graph_data["value"]:
-            # Skip pages not in Notebook
-            if page["parentNotebook"]["id"] != os.environ["NOTEBOOK_ID"]:
-                continue
-            name = f'{page["parentSection"]["displayName"]} - {page["title"]}'.replace("/", "-")
-
-            notebook.append(Page(name, page["id"], page["links"]["oneNoteWebUrl"]["href"]))
-            print(f"Found page '{name}' ({page['id']}).")
-            page_count += 1
-            progress.progress(page_count/count, f"Read {page_count}/{count}")
-        if "@odata.nextLink" in graph_data: # Pagination
-            url = graph_data["@odata.nextLink"]
-        else:
-            break
-    streamlit.write(f"Found {len(notebook)} pages.")
-
-    streamlit.session_state.notebook = notebook
-
 if "notebook" not in streamlit.session_state:
-    with streamlit.spinner("Accessing Notebook..."):
-        load_notebook()
-        streamlit.rerun()
-        streamlit.toast(f"Read {len(streamlit.session_state.notebook)} pages")
+    with streamlit.spinner("Loading references..."):
+        client = storage.Client()
+        bucket = client.bucket(os.environ["BUCKET_NAME"])
+        url_map = bucket.get_blob(os.environ["URL_MAP_NAME"])
+        text = url_map.download_as_text()
+        streamlit.session_state.notebook = [Page(name, url) for name, url in json.loads(text).items()]
+        for page in streamlit.session_state.notebook:
+            print(page.name)
 
 def convert_title_to_notebook_link(title):
+    print(f"Searching for '{title}'")
     page = next((page for page in streamlit.session_state.notebook if page.name == title), None)
     if page is None:
         for page in streamlit.session_state.notebook:
             if title.removesuffix("xa0") in page.name:
                 return f"[{page.name}]({page.url})"
-        return ""
+        return f"{title} *(URL not found)*"
     return f"[{page.name}]({page.url})"
 
 if "chat" not in streamlit.session_state:

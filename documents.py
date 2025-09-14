@@ -6,7 +6,6 @@ import os
 import json
 from dotenv import load_dotenv
 from google.cloud import storage
-from google.cloud.storage.bucket import Bucket
 
 load_dotenv()
 
