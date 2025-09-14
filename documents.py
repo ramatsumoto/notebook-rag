@@ -3,7 +3,10 @@ import vertexai
 from msal import PublicClientApplication
 import requests
 import os
+import json
 from dotenv import load_dotenv
+from google.cloud import storage
+from google.cloud.storage.bucket import Bucket
 
 load_dotenv()
 
@@ -18,10 +21,10 @@ def read_notebook_pages(get_html = True) -> list[Page]:
     # https://github.com/AzureAD/microsoft-authentication-library-for-python?tab=readme-ov-file
     app = PublicClientApplication(
         os.environ["ENTRA_APP_ID"],
-        authority="https://login.microsoftonline.com/organizations"
+        authority=f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}"
     )
     result = None
-
+    
     result = app.acquire_token_interactive(
         scopes=["User.Read", "Notes.Read", "Notes.Read.All"]
     )
@@ -113,7 +116,29 @@ def create_corpus():
         )
     print(f"Finished creating corpus '{rag_corpus.name}'")
 
+def upload_reference_data():
+    notebook = read_notebook_pages(False)
+
+    url_map = dict((page.name, page.url) for page in notebook)
+    text = json.dumps(url_map)
+
+    print(f"Connecting to Cloud bucket '{os.environ['BUCKET_NAME']}'")
+    client = storage.Client()
+    bucket = client.bucket(os.environ["BUCKET_NAME"])
+    print(f"Updating URL map '{os.environ['URL_MAP_NAME']}'")
+    bucket.delete_blobs([os.environ["URL_MAP_NAME"]], on_error=...)
+    blob = bucket.blob(os.environ["URL_MAP_NAME"])
+    blob.upload_from_string(text, content_type="application/json")
+    print("Updated URL map")
+
 if __name__ == "__main__":
-    for page in read_notebook_pages(False):
-        print(page.name)
-        print(page.url)
+    # for page in read_notebook_pages(False):
+    #     print(page.name)
+    #     print(page.url)
+    client = storage.Client()
+    bucket = client.bucket(os.environ["BUCKET_NAME"])
+    url_map = bucket.get_blob(os.environ["URL_MAP_NAME"])
+    text = url_map.download_as_text()
+    notebook = json.loads(text)
+    for k in notebook:
+        print(f"{notebook[k]}\n")
